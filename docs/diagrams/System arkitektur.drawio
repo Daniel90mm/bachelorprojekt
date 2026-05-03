@@ -1,0 +1,52 @@
+<mxfile host="Electron">
+  <diagram name="Page-1" id="B3OtQVM4F9SHJHPuQuFe">
+    <mxGraphModel dx="978" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-4" edge="1" parent="1" source="VNzAMwUyUPKVaiYzTRyZ-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="VNzAMwUyUPKVaiYzTRyZ-2" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="PD/LED Enclosure&lt;br&gt;(Finger measurement)" vertex="1">
+          <mxGeometry height="60" width="130" x="250" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-9" edge="1" parent="1" source="VNzAMwUyUPKVaiYzTRyZ-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="VNzAMwUyUPKVaiYzTRyZ-8" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="TIA" vertex="1">
+          <mxGeometry height="60" width="120" x="400" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-19" edge="1" parent="1" source="VNzAMwUyUPKVaiYzTRyZ-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="VNzAMwUyUPKVaiYzTRyZ-1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="LED Driver board" vertex="1">
+          <mxGeometry height="60" width="120" x="350" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-11" edge="1" parent="1" source="VNzAMwUyUPKVaiYzTRyZ-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="VNzAMwUyUPKVaiYzTRyZ-10" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="LP Filter" vertex="1">
+          <mxGeometry height="60" width="120" x="540" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-13" edge="1" parent="1" source="VNzAMwUyUPKVaiYzTRyZ-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="VNzAMwUyUPKVaiYzTRyZ-12" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="HP Filter" vertex="1">
+          <mxGeometry height="60" width="120" x="690" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Gain" vertex="1">
+          <mxGeometry height="60" width="120" x="830" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-15" edge="1" parent="1" source="VNzAMwUyUPKVaiYzTRyZ-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="VNzAMwUyUPKVaiYzTRyZ-12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-16" edge="1" parent="1" source="VNzAMwUyUPKVaiYzTRyZ-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="VNzAMwUyUPKVaiYzTRyZ-6" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="VNzAMwUyUPKVaiYzTRyZ-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Oscilloscope&lt;br&gt;(AD3)" vertex="1">
+          <mxGeometry height="60" width="120" x="530" y="480" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -208,3 +208,18 @@ __marimo__/
 
 # Local report PDFs
 *projektindberetning*.pdf
+
+# Editor/local workspace
+.vscode/
+
+# Jupyter generated files
+**/.ipynb_checkpoints/
+
+# KiCad generated/local files
+**/.history/
+**/*-backups/*.zip
+**/~*.lck
+**/fp-info-cache
+
+# Draw.io temporary backup files
+.$*.drawio.bkp
