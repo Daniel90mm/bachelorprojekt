@@ -1,16 +1,30 @@
 # Bachelorprojekt
 
-Repository for the bachelor project notebooks, measurement data, reference material, and KiCad hardware design.
+Repository til bachelorprojektets notebooks, måledata, referencedokumenter og KiCad-hardwaredesign.
 
-## Structure
+## Struktur
 
-- `notebooks/` - Jupyter notebooks for analysis, plotting, measurements, and calibration.
-- `data/` - Measurement data, calibration tables, and generated plots.
-- `docs/` - Diagrams and instrument calibration files used for documentation.
-- `hardware/kicad/` - KiCad PCB project and generated fabrication files.
-- `references/` - Datasheets and papers used as project references.
+- `notebooks/` - Jupyter-notebooks til analyse, plots, målinger og kalibrering.
+- `data/` - Måledata, kalibreringstabeller og genererede plots.
+- `docs/` - Diagrammer og instrumentkalibrering brugt til dokumentation.
+- `hardware/kicad/` - KiCad-printprojekt og produktionsfiler.
+- `references/` - Datablade og artikler brugt som projektreferencer.
 
-## Notes
+## Live pulsoximeter
 
-- Local editor files, Jupyter caches, KiCad lock/history files, and generated backup zips are ignored.
-- The KiCad backup folder still contains previously tracked backups, but new backup zips are ignored by default.
+Kør livevisning med popout-plot:
+
+```bash
+python live_pulsoximeter_maaling.py --duration 90 --cycle-rate 10
+```
+
+Kør kun LED-test:
+
+```bash
+python live_pulsoximeter_maaling.py --led-test
+```
+
+## Noter
+
+- Lokale editorfiler, Jupyter-cache, KiCad-låse-/historikfiler og genererede backup-zipfiler ignoreres.
+- KiCad-backupmappen indeholder stadig tidligere trackede backups, men nye backup-zipfiler ignoreres som standard.
