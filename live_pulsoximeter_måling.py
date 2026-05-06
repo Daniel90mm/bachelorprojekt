@@ -14,7 +14,7 @@ from dwfpy.constants import TriggerSource
 
 
 @dataclass
-class MaaleConfig:
+class MåleConfig:
     cycle_rate_hz: float = 10.0
     max_cycle_rate_hz: float = 20.0
     sample_rate_hz: float = 20_000
@@ -44,12 +44,12 @@ class MaaleConfig:
 
     def configure_cycle_rate(self, cycle_rate_hz):
         if cycle_rate_hz <= 0:
-            raise ValueError("cycle_rate_hz skal vaere positiv")
+            raise ValueError("cycle_rate_hz skal være positiv")
         if cycle_rate_hz > self.max_cycle_rate_hz:
             raise ValueError(
                 f"Valgt cyklusfrekvens {cycle_rate_hz:g} Hz er over sikkerhedsloftet "
-                f"paa {self.max_cycle_rate_hz:g} Hz. Haev kun max_cycle_rate_hz, hvis "
-                "LED-stroem, duty cycle og analog settling er kontrolleret."
+                f"på {self.max_cycle_rate_hz:g} Hz. Hæv kun max_cycle_rate_hz, hvis "
+                "LED-strøm, duty cycle og analog settling er kontrolleret."
             )
 
         phase_total_s = 1 / (3 * cycle_rate_hz)
@@ -57,7 +57,7 @@ class MaaleConfig:
         if fase_varighed_s < self.min_fase_varighed_s:
             raise ValueError(
                 f"Cyklusfrekvens {cycle_rate_hz:g} Hz giver kun {fase_varighed_s * 1000:.2f} ms "
-                "til maaling efter settling. Saenk --cycle-rate eller --settle."
+                "til måling efter settling. Sænk --cycle-rate eller --settle."
             )
 
         self.cycle_rate_hz = cycle_rate_hz
@@ -141,7 +141,7 @@ def measure_cycle(device, cfg):
 def calculate_spo2(data, cfg):
     recent = data[data["t_s"] >= data["t_s"].max() - cfg.spo2_vindue_s]
     if len(recent) < 8:
-        return np.nan, np.nan, "venter paa mere data"
+        return np.nan, np.nan, "venter på mere data"
 
     ac_660 = np.percentile(recent["v_660_korr"], 95) - np.percentile(recent["v_660_korr"], 5)
     ac_940 = np.percentile(recent["v_940_korr"], 95) - np.percentile(recent["v_940_korr"], 5)
@@ -157,7 +157,7 @@ def calculate_spo2(data, cfg):
     spo2 = cfg.spo2_a * r_value + cfg.spo2_b
 
     if not np.isfinite(r_value) or not np.isfinite(spo2) or spo2 < 50 or spo2 > 100:
-        return r_value, np.nan, "SpO2 uden for gyldigt omraade"
+        return r_value, np.nan, "SpO2 uden for gyldigt område"
 
     return r_value, spo2, "ok"
 
@@ -212,7 +212,7 @@ def bpm_from_points(t, points, cfg):
 def calculate_bpm(data, cfg):
     recent = data[data["t_s"] >= data["t_s"].max() - cfg.puls_vindue_s]
     if len(recent) < 6 or recent["t_s"].max() - recent["t_s"].min() < cfg.min_puls_tid_s:
-        return np.nan, np.array([], dtype=int), "", "venter paa flere pulsslag"
+        return np.nan, np.array([], dtype=int), "", "venter på flere pulsslag"
 
     t = recent["t_s"].to_numpy()
     y = recent["v_940_korr"].to_numpy()
@@ -236,7 +236,7 @@ def calculate_bpm(data, cfg):
     if not np.isfinite(bpm):
         return np.nan, np.array([], dtype=int), "", "ingen stabile toppe/dale"
     if regularity > 0.35:
-        return np.nan, recent.index.to_numpy()[chosen], kind, "pulsen er for ujaevn"
+        return np.nan, recent.index.to_numpy()[chosen], kind, "pulsen er for ujævn"
 
     return bpm, recent.index.to_numpy()[chosen], kind, "ok"
 
@@ -259,7 +259,7 @@ def make_plot(cfg):
     line_spo2, = ax_spo2.plot([], [], color="tab:purple", label="SpO2 [%]")
 
     axes[0].set_xlabel("Tid [s]")
-    axes[0].set_ylabel("Moerkekorrigeret spaending [V]")
+    axes[0].set_ylabel("Mørkekorrigeret spænding [V]")
     axes[0].grid(True, alpha=0.35)
     axes[0].legend(frameon=False, loc="upper right")
 
@@ -398,18 +398,18 @@ def led_pulse_only_test(cfg, cycles=20, fase_varighed_s=None):
             print("\nAfbrudt af bruger.")
         finally:
             set_leds(device, cfg, led_660=False, led_940=False)
-            print("\nLED-test faerdig. Begge LED'er er slukket.")
+            print("\nLED-test færdig. Begge LED'er er slukket.")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Live pulsoximeter-demo med Discovery 3")
-    parser.add_argument("--duration", type=float, default=90, help="Maaletid i sekunder")
-    parser.add_argument("--range", dest="analog_range_v", type=float, default=2.0, help="Scope-omraade i volt")
+    parser.add_argument("--duration", type=float, default=90, help="Måletid i sekunder")
+    parser.add_argument("--range", dest="analog_range_v", type=float, default=2.0, help="Scope-område i volt")
     parser.add_argument(
         "--cycle-rate",
         type=float,
         default=10.0,
-        help="Komplette 660/940/moerke-cyklusser pr. sekund",
+        help="Komplette 660/940/mørke-cyklusser pr. sekund",
     )
     parser.add_argument(
         "--max-cycle-rate",
@@ -433,9 +433,9 @@ def parse_args():
         "--smooth-window",
         type=float,
         default=0.35,
-        help="Udglatningsvindue i sekunder foer HR-peak-detektion",
+        help="Udglatningsvindue i sekunder før HR-peak-detektion",
     )
-    parser.add_argument("--led-test", action="store_true", help="Koer kun 660/940/off LED-test")
+    parser.add_argument("--led-test", action="store_true", help="Kør kun 660/940/off LED-test")
     parser.add_argument("--led-test-cycles", type=int, default=20)
     parser.add_argument(
         "--led-test-phase",
@@ -449,7 +449,7 @@ def parse_args():
 def main():
     args = parse_args()
     try:
-        cfg = MaaleConfig(
+        cfg = MåleConfig(
             total_varighed_s=args.duration,
             analog_range_v=args.analog_range_v,
             cycle_rate_hz=args.cycle_rate,
@@ -465,10 +465,10 @@ def main():
         led_pulse_only_test(cfg, cycles=args.led_test_cycles, fase_varighed_s=args.led_test_phase)
         return
 
-    print(f"Starter live-maaling i {cfg.total_varighed_s:.0f} s")
+    print(f"Starter live-måling i {cfg.total_varighed_s:.0f} s")
     print(
         f"Cyklusfrekvens: {cfg.cycle_rate_hz:.2f} Hz | "
-        f"maalefase: {cfg.fase_varighed_s * 1000:.1f} ms | "
+        f"målefase: {cfg.fase_varighed_s * 1000:.1f} ms | "
         f"settle: {cfg.settle_s * 1000:.1f} ms | "
         f"aktiv LED-duty: {100 * cfg.active_led_duty:.1f}%"
     )

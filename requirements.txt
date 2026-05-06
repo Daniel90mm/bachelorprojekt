@@ -1,0 +1,14 @@
+# Samlede afhængigheder til live-prototypen og notebooks, så bedømmer
+# og medstuderende kan reproducere kørslerne uden at gætte versioner.
+# Løse minimumsversioner (>=) for at undgå at låse eksakte builds.
+
+# Live pulsoximeter (live_pulsoximeter_måling.py)
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10          # find_peaks til HR-detektion
+matplotlib>=3.7      # live-plot
+dwfpy>=1.0           # styrer Discovery 3 (DIO + analog scope)
+
+# Jupyter-notebooks under notebooks/ (Filtre, Plots, Live_pulsoximeter_måling, ...)
+jupyter>=1.0
+ipykernel>=6.0

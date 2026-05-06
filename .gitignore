@@ -22,7 +22,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Virtuelle miljoer
+# Virtuelle miljøer
 .env
 .envrc
 .venv/
@@ -83,7 +83,7 @@ ipython_config.py
 /Kicad bachelorprojekt/
 
 # WaveForms-eksporter og screenshots i repo-roden.
-# Raa CSV'er gemmes i data/calibration/, og thesis-klare figurer gemmes i data/plots/.
+# Rå CSV'er gemmes i data/calibration/, og thesis-klare figurer gemmes i data/plots/.
 /LPF filter bode*.csv
 /HPF filter bode*.csv
 /LPF filter bode billede.png
