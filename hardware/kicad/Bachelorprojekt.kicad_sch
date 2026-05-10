@@ -2028,7 +2028,7 @@
 		)
 		(uuid "f192a292-5bd8-4ea6-8104-230d515cc92e")
 	)
-	(text "1k ohm"
+	(text "10k ohm"
 		(exclude_from_sim no)
 		(at 209.804 155.702 0)
 		(effects
@@ -2038,7 +2038,7 @@
 		)
 		(uuid "01b7cd89-9cb1-4ee7-9c86-04db23946d59")
 	)
-	(text "20k ohm"
+	(text "39k ohm"
 		(exclude_from_sim no)
 		(at 235.712 154.94 0)
 		(effects
@@ -2118,7 +2118,7 @@
 		)
 		(uuid "64e2e4c0-c64f-42a5-bdc5-7972e7f49fb7")
 	)
-	(text "56k ohm"
+	(text "1M ohm"
 		(exclude_from_sim no)
 		(at 208.026 53.594 0)
 		(effects
@@ -2147,6 +2147,16 @@
 			)
 		)
 		(uuid "972197b7-5310-40ba-893c-52a80dadb017")
+	)
+	(text "fc = 1/(2*3.14*1e6*1e-9) ~= 159 Hz"
+		(exclude_from_sim no)
+		(at 203.454 68.834 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "9f387f58-8609-4e7d-a26c-e3e734c80606")
 	)
 	(text "Non-inv. JST input"
 		(exclude_from_sim no)
@@ -2178,6 +2188,16 @@
 		)
 		(uuid "b40bbf0e-85a4-412a-a8ae-bf2289d1a12f")
 	)
+	(text "G = 1 + 39k/10k = 4.9"
+		(exclude_from_sim no)
+		(at 264.668 142.494 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "e83fb805-3418-45e8-95dd-3d0f10796289")
+	)
 	(text "330k ohm"
 		(exclude_from_sim no)
 		(at 93.726 114.554 0)
@@ -2198,7 +2218,7 @@
 		)
 		(uuid "e9fa59fa-acdc-48d5-bf81-d5d36dee3e2a")
 	)
-	(text "100k ohm\n"
+	(text "2.1 Mohm\n"
 		(exclude_from_sim no)
 		(at 106.934 25.654 0)
 		(effects
@@ -2208,7 +2228,7 @@
 		)
 		(uuid "eb1726cd-2a6c-4bc3-a9c8-7817026e054b")
 	)
-	(text "56k ohm"
+	(text "1M ohm"
 		(exclude_from_sim no)
 		(at 225.044 53.594 0)
 		(effects

@@ -60,6 +60,7 @@ ipython_config.py
 
 # Tom lokal kladde, som ikke indeholder projektarbejde
 /notebooks/3Dprint.ipynb
+/test.ipynb
 
 # Lokale logs og midlertidige filer
 *.log
@@ -72,6 +73,9 @@ ipython_config.py
 
 # Rapportudkast, der kun ligger lokalt
 *projektindberetning*.pdf
+
+# Lokal backup af rå TIFF-filer før mørkemålingerne blev beskåret.
+/data/raw/daniel/backup_før_mørke_crop/
 
 # KiCad-genererede eller lokale filer
 **/.history/
@@ -88,3 +92,6 @@ ipython_config.py
 /HPF filter bode*.csv
 /LPF filter bode billede.png
 /HPF filter bode billede.png
+
+# LLM-handoff-notat. Kun til lokal brug.
+/HANDOFF.md
