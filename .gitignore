@@ -74,6 +74,9 @@ ipython_config.py
 # Rapportudkast, der kun ligger lokalt
 *projektindberetning*.pdf
 
+# Separat LaTeX-projekt/repo med egne buildfiler
+/Bachelorproject-Thesis-only/
+
 # Lokal backup af rå TIFF-filer før mørkemålingerne blev beskåret.
 /data/raw/daniel/backup_før_mørke_crop/
 

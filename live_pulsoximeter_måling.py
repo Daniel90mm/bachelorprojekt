@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import argparse
-from pathlib import Path
 import time
 
 import matplotlib.pyplot as plt
@@ -14,67 +13,37 @@ import dwfpy as dwf
 from dwfpy.constants import TriggerSource
 
 
+DURATION_S = 60
+ANALOG_CHANNEL = 0
+DIO_660 = 1
+DIO_940 = 0
+
+MIN_BPM = 40
+MAX_BPM = 140
+PLOT_WINDOW_S = 15
+HR_WINDOW_S = 30
+SPO2_WINDOW_S = 30
+MIN_METRIC_WINDOW_S = 12
+
+
 @dataclass
 class MåleConfig:
     cycle_rate_hz: float = 7.41
-    max_cycle_rate_hz: float = 20.0
-    sample_rate_hz: float = 20_000
-    settle_s: float = 0.005
-    min_fase_varighed_s: float = 0.005
-    fase_varighed_s: float = 0.0
-    total_varighed_s: float = 90
-    analog_channel: int = 0
     analog_range_v: float = 10.0
-    dio_660: int = 1
-    dio_940: int = 0
     spo2_a: float = -24.87
     spo2_b: float = 113.8
-    puls_vindue_s: float = 60
-    min_puls_tid_s: float = 15
-    spo2_vindue_s: float = 30
-    spo2_min_dc_v: float = 1e-3
-    spo2_min_ac_v: float = 1e-5
-    spo2_bp_low_hz: float = 0.5
-    spo2_bp_high_hz: float = 2.0
-    spo2_ac_low_percentile: float = 5.0
-    spo2_ac_high_percentile: float = 95.0
-    min_bpm: float = 40
-    max_bpm: float = 140
-    peak_prominence_fraction: float = 0.3
-    smoothing_window_s: float = 0.35
-    plot_window_s: float = 15
+    bp_low_hz: float = 0.5
+    bp_high_hz: float = 2.0
+    peak_prominence: float = 0.3
+
+    sample_rate_hz: float = 20_000
+    settle_s: float = 0.005
+    trim_fraction: float = 0.10
 
     def __post_init__(self):
-        self.configure_cycle_rate(self.cycle_rate_hz)
-
-    def configure_cycle_rate(self, cycle_rate_hz):
-        if cycle_rate_hz <= 0:
-            raise ValueError("cycle_rate_hz skal være positiv")
-        if cycle_rate_hz > self.max_cycle_rate_hz:
-            raise ValueError(
-                f"Valgt cyklusfrekvens {cycle_rate_hz:g} Hz er over sikkerhedsloftet "
-                f"på {self.max_cycle_rate_hz:g} Hz. Hæv kun max_cycle_rate_hz, hvis "
-                "LED-strøm, duty cycle og analog settling er kontrolleret."
-            )
-
-        phase_total_s = 1 / (3 * cycle_rate_hz)
-        fase_varighed_s = phase_total_s - self.settle_s
-        if fase_varighed_s < self.min_fase_varighed_s:
-            raise ValueError(
-                f"Cyklusfrekvens {cycle_rate_hz:g} Hz giver kun {fase_varighed_s * 1000:.2f} ms "
-                "til måling efter settling. Sænk --cycle-rate eller --settle."
-            )
-
-        self.cycle_rate_hz = cycle_rate_hz
-        self.fase_varighed_s = fase_varighed_s
-
-    @property
-    def phase_total_s(self):
-        return self.fase_varighed_s + self.settle_s
-
-    @property
-    def active_led_duty(self):
-        return self.fase_varighed_s * self.cycle_rate_hz
+        self.measure_s = 1 / (3 * self.cycle_rate_hz) - self.settle_s
+        if self.measure_s <= 0:
+            raise ValueError("cycle-rate er for høj i forhold til settle-tiden")
 
 
 def setup_scope(device, cfg):
@@ -89,18 +58,18 @@ def setup_scope(device, cfg):
             offset=0.0,
             coupling="dc",
             filter="average",
-            enabled=(channel_index == cfg.analog_channel),
+            enabled=(channel_index == ANALOG_CHANNEL),
         )
 
 
-def set_leds(device, cfg, led_660=False, led_940=False):
+def set_leds(device, led_660=False, led_940=False):
     pattern = device.digital_output
-    pattern[cfg.dio_660].setup_constant(
+    pattern[DIO_660].setup_constant(
         "high" if led_660 else "low",
         output_mode="push-pull",
         idle_state="low",
     )
-    pattern[cfg.dio_940].setup_constant(
+    pattern[DIO_940].setup_constant(
         "high" if led_940 else "low",
         output_mode="push-pull",
         idle_state="low",
@@ -109,28 +78,29 @@ def set_leds(device, cfg, led_660=False, led_940=False):
 
 
 def measure_voltage(device, cfg):
-    scope = device.analog_input
-    recorder = scope.record(
+    recorder = device.analog_input.record(
         sample_rate=cfg.sample_rate_hz,
-        length=cfg.fase_varighed_s,
+        length=cfg.measure_s,
         buffer_size=8192,
         configure=True,
         start=True,
     )
-    samples = recorder.channels[cfg.analog_channel].data_samples
-    return float(np.mean(samples))
+    values = np.asarray(recorder.channels[ANALOG_CHANNEL].data_samples, dtype=float)
+    values = values[np.isfinite(values)]
+
+    return float(np.mean(values))
 
 
 def measure_cycle(device, cfg):
-    set_leds(device, cfg, led_660=True, led_940=False)
+    set_leds(device, led_660=True)
     time.sleep(cfg.settle_s)
     v_660 = measure_voltage(device, cfg)
 
-    set_leds(device, cfg, led_660=False, led_940=True)
+    set_leds(device, led_940=True)
     time.sleep(cfg.settle_s)
     v_940 = measure_voltage(device, cfg)
 
-    set_leds(device, cfg, led_660=False, led_940=False)
+    set_leds(device)
     time.sleep(cfg.settle_s)
     v_dark = measure_voltage(device, cfg)
 
@@ -143,146 +113,83 @@ def measure_cycle(device, cfg):
     }
 
 
-def cardiac_bandpass(y, t, low_hz=0.5, high_hz=2.0):
-    """Zero-phase Butterworth-bandpas til hjertebåndet."""
-    n = len(y)
-    if n < 16:
-        return y
+def bandpass(y, t, low_hz, high_hz):
+    y = np.asarray(y, dtype=float)
+    t = np.asarray(t, dtype=float)
 
-    dt = np.diff(t)
-    median_dt = np.median(dt)
-    if median_dt <= 0 or not np.isfinite(median_dt):
-        return y
+    dt = np.median(np.diff(t))
 
-    fs = 1.0 / median_dt
+    fs = 1 / dt
     nyq = 0.5 * fs
     high = min(high_hz, 0.95 * nyq)
-    low = max(low_hz, 1e-3)
-    if high <= low:
-        return y
-    sos = butter(2, [low / nyq, high / nyq], btype="band", output="sos")
-    padlen = min(3 * (sos.shape[0] + 1), n - 1)
-    return sosfiltfilt(sos, y, padlen=padlen)
+
+    sos = butter(2, [low_hz / nyq, high / nyq], btype="band", output="sos")
+    return sosfiltfilt(sos, y, padlen=min(3 * (sos.shape[0] + 1), len(y) - 1))
 
 
-def robust_ac_amplitude(y, low_percentile, high_percentile):
-    return np.percentile(y, high_percentile) - np.percentile(y, low_percentile)
+def normalized_ppg(y):
+    y = np.asarray(y, dtype=float)
+    if len(y) == 0 or np.any(~np.isfinite(y)) or np.any(y <= 1e-3):
+        return None
+
+    dc = np.median(y)
+    if not np.isfinite(dc) or dc <= 1e-3:
+        return None
+    return np.log(y / dc)
 
 
 def calculate_spo2(data, cfg):
-    recent = data[data["t_s"] >= data["t_s"].max() - cfg.spo2_vindue_s]
-    if len(recent) < 8:
-        return np.nan, np.nan, "venter på mere data"
-
+    recent = data[data["t_s"] >= data["t_s"].max() - SPO2_WINDOW_S]
     t = recent["t_s"].to_numpy()
-    y_660_bp = cardiac_bandpass(
-        recent["v_660_korr"].to_numpy(),
-        t,
-        low_hz=cfg.spo2_bp_low_hz,
-        high_hz=cfg.spo2_bp_high_hz,
-    )
-    y_940_bp = cardiac_bandpass(
-        recent["v_940_korr"].to_numpy(),
-        t,
-        low_hz=cfg.spo2_bp_low_hz,
-        high_hz=cfg.spo2_bp_high_hz,
-    )
-    ac_660 = robust_ac_amplitude(y_660_bp, cfg.spo2_ac_low_percentile, cfg.spo2_ac_high_percentile)
-    ac_940 = robust_ac_amplitude(y_940_bp, cfg.spo2_ac_low_percentile, cfg.spo2_ac_high_percentile)
-    dc_660 = abs(recent["v_660_korr"].mean())
-    dc_940 = abs(recent["v_940_korr"].mean())
 
-    if dc_660 < cfg.spo2_min_dc_v or dc_940 < cfg.spo2_min_dc_v:
-        return np.nan, np.nan, "SpO2 ikke gyldig: DC-led for lavt"
-    if ac_660 < cfg.spo2_min_ac_v or ac_940 < cfg.spo2_min_ac_v:
-        return np.nan, np.nan, "SpO2 ikke gyldig: AC-led for lavt"
+    red = normalized_ppg(recent["v_660_korr"].to_numpy())
+    ir = normalized_ppg(recent["v_940_korr"].to_numpy())
 
-    r_value = (ac_660 / dc_660) / (ac_940 / dc_940)
+    red_bp = bandpass(red, t, cfg.bp_low_hz, cfg.bp_high_hz)
+    ir_bp = bandpass(ir, t, cfg.bp_low_hz, cfg.bp_high_hz)
+
+    ac_red = np.percentile(red_bp, 95) - np.percentile(red_bp, 5)
+    ac_ir = np.percentile(ir_bp, 95) - np.percentile(ir_bp, 5)
+
+    r_value = ac_red / ac_ir
     spo2 = cfg.spo2_a * r_value + cfg.spo2_b
 
-    if not np.isfinite(r_value) or not np.isfinite(spo2) or spo2 < 50 or spo2 > 100:
-        return r_value, np.nan, "SpO2 uden for gyldigt område"
-
-    return r_value, spo2, "ok"
+    return float(r_value), float(spo2)
 
 
-def smooth(y, width):
-    if len(y) < width:
-        return y
-    kernel = np.ones(width) / width
-    return np.convolve(y, kernel, mode="same")
-
-
-def find_pulse_points(t, y, cfg, polarity=1):
-    if len(y) >= 4:
-        trend = np.polyval(np.polyfit(t - t[0], y, 1), t - t[0])
-        y = y - trend
-    y = polarity * (y - np.median(y))
-
-    if len(y) < 3 or np.std(y) < 1e-12:
-        return np.array([], dtype=int)
-
-    fs = 1 / np.median(np.diff(t))
-    smooth_width = max(1, int(round(cfg.smoothing_window_s * fs)))
-    y = smooth(y, smooth_width)
-
-    min_distance_s = 60 / cfg.max_bpm
-    min_distance_samples = max(1, int(round(min_distance_s * fs)))
-    prominence = cfg.peak_prominence_fraction * np.ptp(y)
-    if prominence <= 0:
-        return np.array([], dtype=int)
-
-    points, _ = find_peaks(y, distance=min_distance_samples, prominence=prominence)
-    return points
-
-
-def bpm_from_points(t, points, cfg):
-    if len(points) < 3:
-        return np.nan, np.inf
-
-    intervals = np.diff(t[points])
-    valid = (intervals >= 60 / cfg.max_bpm) & (intervals <= 60 / cfg.min_bpm)
-    intervals = intervals[valid]
-    if len(intervals) < 2:
-        return np.nan, np.inf
-
-    bpm = 60 / np.median(intervals)
-    regularity = np.std(intervals) / np.median(intervals)
-    if bpm < cfg.min_bpm or bpm > cfg.max_bpm:
-        return np.nan, np.inf
-    return bpm, regularity
-
-
-def calculate_bpm(data, cfg):
-    recent = data[data["t_s"] >= data["t_s"].max() - cfg.puls_vindue_s]
-    if len(recent) < 6 or recent["t_s"].max() - recent["t_s"].min() < cfg.min_puls_tid_s:
-        return np.nan, np.array([], dtype=int), "", "venter på flere pulsslag"
-
+def calculate_hr(data, cfg):
+    recent = data[data["t_s"] >= data["t_s"].max() - HR_WINDOW_S]
     t = recent["t_s"].to_numpy()
-    y = recent["v_940_korr"].to_numpy()
 
-    peak_local = find_pulse_points(t, y, cfg, polarity=1)
-    trough_local = find_pulse_points(t, y, cfg, polarity=-1)
-    peak_bpm, peak_regularity = bpm_from_points(t, peak_local, cfg)
-    trough_bpm, trough_regularity = bpm_from_points(t, trough_local, cfg)
+    y = normalized_ppg(recent["v_940_korr"].to_numpy())
+    y = bandpass(y, t, cfg.bp_low_hz, cfg.bp_high_hz)
 
-    if np.isfinite(trough_bpm) and (not np.isfinite(peak_bpm) or trough_regularity < peak_regularity):
-        chosen = trough_local
-        bpm = trough_bpm
-        kind = "dale"
-        regularity = trough_regularity
-    else:
-        chosen = peak_local
-        bpm = peak_bpm
-        kind = "toppe"
-        regularity = peak_regularity
+    y = y - np.median(y)
 
-    if not np.isfinite(bpm):
-        return np.nan, np.array([], dtype=int), "", "ingen stabile toppe/dale"
-    if regularity > 0.35:
-        return np.nan, recent.index.to_numpy()[chosen], kind, "pulsen er for ujævn"
+    dt = np.median(np.diff(t))
 
-    return bpm, recent.index.to_numpy()[chosen], kind, "ok"
+    fs = 1 / dt
+    min_distance = max(1, int(round(fs * 60 / MAX_BPM)))
+    prominence = cfg.peak_prominence * np.ptp(y)
+
+    best_bpm = np.nan
+    best_points = np.array([], dtype=int)
+    best_regularity = np.inf
+    for polarity in (1, -1):
+        points, _ = find_peaks(polarity * y, distance=min_distance, prominence=prominence)
+        intervals = np.diff(t[points])
+        intervals = intervals[(intervals >= 60 / MAX_BPM) & (intervals <= 60 / MIN_BPM)]
+        if len(intervals) < 2:
+            continue
+
+        bpm = 60 / np.median(intervals)
+        regularity = np.std(intervals) / np.median(intervals)
+        if regularity < best_regularity:
+            best_bpm = bpm
+            best_points = recent.index.to_numpy()[points]
+            best_regularity = regularity
+
+    return float(best_bpm), best_points
 
 
 def fmt(value, suffix="", decimals=1):
@@ -291,14 +198,13 @@ def fmt(value, suffix="", decimals=1):
 
 def make_plot(cfg):
     plt.ion()
-    fig, axes = plt.subplots(2, 1, figsize=(13, 7), constrained_layout=True)
+    fig, axes = plt.subplots(2, 1, figsize=(13, 7), dpi=300, constrained_layout=True)
     fig.canvas.manager.set_window_title("Live pulsoximeter")
 
     line_660, = axes[0].plot([], [], color="tab:red", label="660 nm")
     line_940, = axes[0].plot([], [], color="tab:green", label="940 nm")
-    peak_scatter = axes[0].scatter([], [], color="black", s=28, label="Puls")
-
-    line_bpm, = axes[1].plot([], [], color="tab:blue", label="HR [BPM]")
+    pulse_points = axes[0].scatter([], [], color="black", s=24, label="Puls")
+    line_hr, = axes[1].plot([], [], color="tab:blue", label="HR [BPM]")
     ax_spo2 = axes[1].twinx()
     line_spo2, = ax_spo2.plot([], [], color="tab:purple", label="SpO2 [%]")
 
@@ -309,469 +215,110 @@ def make_plot(cfg):
 
     axes[1].set_xlabel("Tid [s]")
     axes[1].set_ylabel("HR [BPM]")
-    axes[1].set_ylim(cfg.min_bpm - 10, cfg.max_bpm + 10)
+    axes[1].set_xlim(0, DURATION_S)
+    axes[1].set_ylim(MIN_BPM - 10, MAX_BPM + 10)
     axes[1].grid(True, alpha=0.35)
 
     ax_spo2.set_ylabel("SpO2 [%]")
+    ax_spo2.set_xlim(0, DURATION_S)
     ax_spo2.set_ylim(80, 100)
 
-    handles1, labels1 = axes[1].get_legend_handles_labels()
-    handles2, labels2 = ax_spo2.get_legend_handles_labels()
-    axes[1].legend(handles1 + handles2, labels1 + labels2, frameon=False, loc="upper right")
+    h1, l1 = axes[1].get_legend_handles_labels()
+    h2, l2 = ax_spo2.get_legend_handles_labels()
+    axes[1].legend(h1 + h2, l1 + l2, frameon=False, loc="upper right")
 
-    status_text = axes[0].text(
-        0.01,
-        0.98,
-        "",
-        transform=axes[0].transAxes,
-        va="top",
-        ha="left",
-        fontsize=10,
-        bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "0.8"},
-    )
-
-    return fig, axes, ax_spo2, line_660, line_940, peak_scatter, line_bpm, line_spo2, status_text
+    return fig, axes, ax_spo2, line_660, line_940, pulse_points, line_hr, line_spo2
 
 
-def update_plot(plot_state, data, metrics, pulse_indices, pulse_kind, cfg):
-    fig, axes, ax_spo2, line_660, line_940, peak_scatter, line_bpm, line_spo2, status_text = plot_state
-    recent = data[data["t_s"] >= data["t_s"].max() - cfg.plot_window_s]
-    metrics_df = pd.DataFrame(metrics)
-    last = metrics[-1]
+def update_plot(plot_state, data, pulse_indices):
+    fig, axes, ax_spo2, line_660, line_940, pulse_points, line_hr, line_spo2 = plot_state
+    recent = data[data["t_s"] >= data["t_s"].max() - PLOT_WINDOW_S]
+    last = data.iloc[-1]
 
     line_660.set_data(recent["t_s"], recent["v_660_korr"])
     line_940.set_data(recent["t_s"], recent["v_940_korr"])
 
     visible = [idx for idx in pulse_indices if idx in recent.index]
     if visible:
-        peak_scatter.set_offsets(np.c_[data.loc[visible, "t_s"], data.loc[visible, "v_940_korr"]])
-        peak_scatter.set_label(f"Puls-{pulse_kind}")
-    else:
-        peak_scatter.set_offsets(np.empty((0, 2)))
+        pulse_points.set_offsets(np.c_[data.loc[visible, "t_s"], data.loc[visible, "v_940_korr"]])
 
-    line_bpm.set_data(metrics_df["t_s"], metrics_df["bpm"])
-    line_spo2.set_data(metrics_df["t_s"], metrics_df["spo2"])
+    line_hr.set_data(data["t_s"], data["bpm"])
+    line_spo2.set_data(data["t_s"], data["spo2"])
 
-    axes[0].set_xlim(max(0, data["t_s"].max() - cfg.plot_window_s), data["t_s"].max() + 0.5)
+    axes[0].set_xlim(max(0, data["t_s"].max() - PLOT_WINDOW_S), data["t_s"].max() + 0.5)
     ymin = np.nanmin([recent["v_660_korr"].min(), recent["v_940_korr"].min()])
     ymax = np.nanmax([recent["v_660_korr"].max(), recent["v_940_korr"].max()])
     pad = max((ymax - ymin) * 0.15, 1e-6)
     axes[0].set_ylim(ymin - pad, ymax + pad)
+    axes[0].set_title(f"HR {fmt(last['bpm'], ' BPM')} | SpO2 {fmt(last['spo2'], ' %')} | R {fmt(last['R'], decimals=3)}")
 
-    axes[1].set_xlim(0, max(cfg.total_varighed_s, data["t_s"].max()))
-    ax_spo2.set_xlim(axes[1].get_xlim())
-
-    notes = []
-    if last.get("bpm_note") != "ok":
-        notes.append(f"HR: {last.get('bpm_note')}")
-    if last.get("spo2_note") != "ok":
-        notes.append(f"SpO2: {last.get('spo2_note')}")
-    status_text.set_text("\n".join(notes))
-
-    axes[0].set_title(f"Live signal | HR {fmt(last['bpm'], ' BPM')} | SpO2 {fmt(last['spo2'], ' %')}")
     fig.canvas.draw_idle()
     fig.canvas.flush_events()
 
 
-def run_live(cfg, blocking_plot=True):
-    rows = []
-    metrics = []
-    start = time.monotonic()
-    plot_state = make_plot(cfg)
-
-    with dwf.Device() as device:
-        setup_scope(device, cfg)
-        set_leds(device, cfg, led_660=False, led_940=False)
-
-        try:
-            while time.monotonic() - start < cfg.total_varighed_s:
-                row = measure_cycle(device, cfg)
-                row["t_s"] = time.monotonic() - start
-                rows.append(row)
-
-                data = pd.DataFrame(rows)
-                r_value, spo2, spo2_note = calculate_spo2(data, cfg)
-                bpm, pulse_indices, pulse_kind, bpm_note = calculate_bpm(data, cfg)
-
-                metrics.append(
-                    {
-                        "t_s": row["t_s"],
-                        "R": r_value,
-                        "spo2": spo2,
-                        "bpm": bpm,
-                        "spo2_note": spo2_note,
-                        "bpm_note": bpm_note,
-                    }
-                )
-
-                print(
-                    f"t={row['t_s']:6.2f}  "
-                    f"660={row['v_660']*1000:7.2f} mV  "
-                    f"940={row['v_940']*1000:7.2f} mV  "
-                    f"dark={row['v_dark']*1000:7.2f} mV  "
-                    f"660-d={row['v_660_korr']*1000:7.2f} mV  "
-                    f"940-d={row['v_940_korr']*1000:7.2f} mV  "
-                    f"HR={fmt(bpm, ' BPM'):>10s}  "
-                    f"SpO2={fmt(spo2, ' %'):>8s}  "
-                    f"R={fmt(r_value, decimals=3):>7s}  "
-                    f"[HR: {bpm_note} | SpO2: {spo2_note}]"
-                )
-                update_plot(plot_state, data, metrics, pulse_indices, pulse_kind, cfg)
-
-        except KeyboardInterrupt:
-            print("\nAfbrudt af bruger.")
-        finally:
-            set_leds(device, cfg, led_660=False, led_940=False)
-            plt.ioff()
-            if blocking_plot:
-                plt.show()
-            else:
-                # Ikke-blokerende plot, så --repeats kan rulle videre uden brugerinput.
-                plt.pause(0.1)
-                plt.close(plot_state[0])
-
-    return pd.DataFrame(rows), pd.DataFrame(metrics)
-
-
-def led_pulse_only_test(cfg, cycles=20, fase_varighed_s=None):
-    if fase_varighed_s is None:
-        fase_varighed_s = cfg.phase_total_s
-
-    print("Starter LED-test")
-    print(f"DIO{cfg.dio_660}/Lead 0: 660 nm")
-    print(f"DIO{cfg.dio_940}/Lead 1: 940 nm")
-    print(f"Cyklusfrekvens: {cfg.cycle_rate_hz:.2f} Hz ({fase_varighed_s * 1000:.1f} ms pr. tilstand)")
-
-    with dwf.Device() as device:
-        try:
-            for cycle in range(cycles):
-                print(f"Cyklus {cycle + 1}/{cycles}: 660 nm ON, 940 nm OFF", end="\r")
-                set_leds(device, cfg, led_660=True, led_940=False)
-                time.sleep(fase_varighed_s)
-
-                print(f"Cyklus {cycle + 1}/{cycles}: 660 nm OFF, 940 nm ON", end="\r")
-                set_leds(device, cfg, led_660=False, led_940=True)
-                time.sleep(fase_varighed_s)
-
-                print(f"Cyklus {cycle + 1}/{cycles}: begge LED'er OFF       ", end="\r")
-                set_leds(device, cfg, led_660=False, led_940=False)
-                time.sleep(fase_varighed_s)
-        except KeyboardInterrupt:
-            print("\nAfbrudt af bruger.")
-        finally:
-            set_leds(device, cfg, led_660=False, led_940=False)
-            print("\nLED-test færdig. Begge LED'er er slukket.")
-
-
-def wait_before_start(delay_s):
-    if delay_s <= 0:
-        return
-
-    print(f"\nStarter om {delay_s:.0f} s. Sæt begge pulsoximetre på nu.")
-    remaining = int(np.ceil(delay_s))
-    end_time = time.monotonic() + delay_s
-    while remaining > 0:
-        print(f"Start om {remaining:2d} s", end="\r")
-        time.sleep(min(1.0, max(0.0, end_time - time.monotonic())))
-        remaining = int(np.ceil(end_time - time.monotonic()))
-    print("Starter nu.                 \n")
-
-
-def warmup_chain(cfg, warmup_s):
-    print(f"\nVarmer kæden op i {warmup_s:.0f} s ...")
-    phase_s = cfg.phase_total_s
-    cycles = max(1, int(round(warmup_s / (3 * phase_s))))
-    with dwf.Device() as device:
-        try:
-            for cycle in range(cycles):
-                set_leds(device, cfg, led_660=True, led_940=False)
-                time.sleep(phase_s)
-                set_leds(device, cfg, led_660=False, led_940=True)
-                time.sleep(phase_s)
-                set_leds(device, cfg, led_660=False, led_940=False)
-                time.sleep(phase_s)
-                if cycle % 10 == 0:
-                    elapsed = cycle * 3 * phase_s
-                    print(f"Opvarmning: {elapsed:5.1f} / {warmup_s:.0f} s", end="\r")
-        except KeyboardInterrupt:
-            print("\nOpvarmning afbrudt af bruger.")
-        finally:
-            set_leds(device, cfg, led_660=False, led_940=False)
-    print("\nOpvarmning færdig.\n")
-
-
-def last_finite(metrics_df, column):
-    if metrics_df.empty or column not in metrics_df:
-        return float("nan")
-
-    values = metrics_df[column].to_numpy(dtype=float)
-    valid = values[np.isfinite(values)]
-    return float(valid[-1]) if len(valid) else float("nan")
-
-
-def recent_finite_values(metrics_df, column, window_s):
-    if metrics_df.empty or column not in metrics_df:
-        return np.array([])
-
-    recent = metrics_df[np.isfinite(metrics_df[column])]
-    if recent.empty:
-        return np.array([])
-
-    t_max = recent["t_s"].max()
-    recent = recent[recent["t_s"] >= t_max - window_s]
-    return recent[column].to_numpy(dtype=float)
-
-
-def summarize_measurement(metrics_df, cfg, reference_spo2=None):
-    r_values = recent_finite_values(metrics_df, "R", cfg.spo2_vindue_s)
-    spo2_values = recent_finite_values(metrics_df, "spo2", cfg.spo2_vindue_s)
-    bpm_values = recent_finite_values(metrics_df, "bpm", cfg.puls_vindue_s)
-
-    summary = {
-        "bpm_final": last_finite(metrics_df, "bpm"),
-        "spo2_final": last_finite(metrics_df, "spo2"),
-        "R_final": last_finite(metrics_df, "R"),
-        "R_mean": float(np.mean(r_values)) if len(r_values) else float("nan"),
-        "R_std": float(np.std(r_values, ddof=1)) if len(r_values) > 1 else float("nan"),
-        "R_n": int(len(r_values)),
-        "spo2_mean": float(np.mean(spo2_values)) if len(spo2_values) else float("nan"),
-        "bpm_mean": float(np.mean(bpm_values)) if len(bpm_values) else float("nan"),
-        "reference_spo2": reference_spo2,
-        "spo2_b_for_reference": float("nan"),
-    }
-
-    if reference_spo2 is not None and np.isfinite(reference_spo2) and np.isfinite(summary["R_mean"]):
-        summary["spo2_b_for_reference"] = reference_spo2 - cfg.spo2_a * summary["R_mean"]
-
-    return summary
-
-
-def print_measurement_summary(summary, cfg):
-    print("\n=== Slutopsummering ===")
-    print(f"HR sidst/middel:   {fmt(summary['bpm_final'], ' BPM')} / {fmt(summary['bpm_mean'], ' BPM')}")
-    print(f"SpO2 sidst/middel: {fmt(summary['spo2_final'], ' %')} / {fmt(summary['spo2_mean'], ' %')}")
-
-    r_std = "--" if not np.isfinite(summary["R_std"]) else f"{summary['R_std']:.4f}"
-    print(f"R middel:          {fmt(summary['R_mean'], decimals=4)} ± {r_std}  (n={summary['R_n']})")
-    print(f"Kalibrering brugt: SpO2 = {cfg.spo2_a:.3f} * R + {cfg.spo2_b:.3f}")
-
-    reference_spo2 = summary.get("reference_spo2")
-    b_for_reference = summary.get("spo2_b_for_reference")
-    if reference_spo2 is not None and np.isfinite(b_for_reference):
-        print(
-            f"Hvis Braun-reference er {reference_spo2:.1f} %, og a fastholdes, "
-            f"giver denne måling b = {b_for_reference:.3f}"
-        )
-        print("For at bestemme både a og b skal du bruge mindst to stabile referencepunkter.")
-
-
-def output_path(save_prefix, suffix, run_index=None):
-    prefix = Path(save_prefix)
-    run_suffix = f"_run{run_index:02d}" if run_index is not None else ""
-    stem = prefix.stem if prefix.suffix else prefix.name
-    return prefix.with_name(f"{stem}{run_suffix}_{suffix}.csv")
-
-
-def save_measurement(save_prefix, rows_df, metrics_df, run_index=None):
-    if not save_prefix:
-        return
-
-    raw_path = output_path(save_prefix, "raw", run_index)
-    metrics_path = output_path(save_prefix, "metrics", run_index)
-    raw_path.parent.mkdir(parents=True, exist_ok=True)
+def save_measurement(rows_df):
+    raw_path = f"pulsoximeter_{time.strftime('%Y%m%d_%H%M%S')}.csv"
     rows_df.to_csv(raw_path, index=False)
-    metrics_df.to_csv(metrics_path, index=False)
     print(f"Gemte rådata:  {raw_path}")
-    print(f"Gemte metrics: {metrics_path}")
-
-
-def run_repeats(cfg, repeats, pause_s, reference_spo2=None, save_prefix=None):
-    summaries = []
-    for run_index in range(1, repeats + 1):
-        print(f"\n=== Kørsel {run_index}/{repeats} ===")
-        rows_df, metrics_df = run_live(cfg, blocking_plot=False)
-        save_measurement(save_prefix, rows_df, metrics_df, run_index=run_index)
-
-        summary = summarize_measurement(metrics_df, cfg, reference_spo2=reference_spo2)
-        summary["run"] = run_index
-        summaries.append(summary)
-        print_measurement_summary(summary, cfg)
-
-        if run_index < repeats:
-            print(f"Pauser {pause_s:.1f} s før næste kørsel ...")
-            time.sleep(pause_s)
-
-    print("\n=== Opsummering af alle kørsler ===")
-    print(f"{'Run':>4}  {'HR [BPM]':>10}  {'SpO2 [%]':>10}  {'R middel':>10}  {'R std':>8}  {'n':>4}")
-    for summary in summaries:
-        r_std = "--" if not np.isfinite(summary["R_std"]) else f"{summary['R_std']:.4f}"
-        print(
-            f"{summary['run']:>4}  "
-            f"{fmt(summary['bpm_final']):>10}  "
-            f"{fmt(summary['spo2_final']):>10}  "
-            f"{fmt(summary['R_mean'], decimals=4):>10}  "
-            f"{r_std:>8}  "
-            f"{summary['R_n']:>4}"
-        )
-
-    r_means = [summary["R_mean"] for summary in summaries if np.isfinite(summary["R_mean"])]
-    if r_means:
-        print(f"R på tværs: middel={np.mean(r_means):.4f}, std={np.std(r_means):.4f} (n={len(r_means)})")
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Live pulsoximeter-demo med Discovery 3")
-    parser.add_argument("--duration", type=float, default=90, help="Måletid i sekunder")
-    parser.add_argument("--range", dest="analog_range_v", type=float, default=10.0, help="Scope-område i volt")
-    parser.add_argument(
-        "--cycle-rate",
-        type=float,
-        default=7.41,
-        help=(
-            "Komplette 660/940/mørke-cyklusser pr. sekund. "
-            "Standard 7.41 Hz giver 45 ms pr. fase (40 ms målevindue efter 5 ms settle), "
-            "som er præcis 2 perioder af 50 Hz nettet, så netbrum midles ud."
-        ),
-    )
-    parser.add_argument(
-        "--max-cycle-rate",
-        type=float,
-        default=20.0,
-        help="Sikkerhedsloft for --cycle-rate i komplette cyklusser pr. sekund",
-    )
-    parser.add_argument(
-        "--settle",
-        type=float,
-        default=0.005,
-        help="Ventetid efter hvert LED-skift i sekunder",
-    )
-    parser.add_argument(
-        "--peak-prominence",
-        type=float,
-        default=0.3,
-        help="Peak-prominence som andel af seneste peak-to-peak-signal til HR-detektion",
-    )
-    parser.add_argument(
-        "--smooth-window",
-        type=float,
-        default=0.35,
-        help="Udglatningsvindue i sekunder før HR-peak-detektion",
-    )
-    parser.add_argument(
-        "--spo2-a",
-        type=float,
-        default=-24.87,
-        help="Lineær SpO2-koefficient a i SpO2 = a * R + b",
-    )
-    parser.add_argument(
-        "--spo2-b",
-        type=float,
-        default=113.8,
-        help="Lineær SpO2-koefficient b i SpO2 = a * R + b",
-    )
-    parser.add_argument(
-        "--reference-spo2",
-        type=float,
-        default=None,
-        help="Braun-referenceværdi i procent til én-punkts b-estimat efter målingen",
-    )
-    parser.add_argument(
-        "--save-prefix",
-        type=str,
-        default=None,
-        help="Gem rådata og metrics som CSV med dette filnavn-prefix",
-    )
-    parser.add_argument(
-        "--start-delay",
-        type=float,
-        default=0.0,
-        help="Vent N sekunder før opvarmning/måling starter, så fingrene kan placeres",
-    )
-    parser.add_argument("--led-test", action="store_true", help="Kør kun 660/940/off LED-test")
-    parser.add_argument("--led-test-cycles", type=int, default=20)
-    parser.add_argument(
-        "--led-test-phase",
-        type=float,
-        default=None,
-        help="Sekunder pr. LED-testtilstand. Standard er fasetiden fra --cycle-rate.",
-    )
-    parser.add_argument(
-        "--warmup",
-        type=float,
-        default=0.0,
-        help="Cykler LED'erne i N sekunder før måling for at lade kæden varme op",
-    )
-    parser.add_argument(
-        "--repeats",
-        type=int,
-        default=1,
-        help="Kør målingen N gange efter hinanden uden at flytte finger",
-    )
-    parser.add_argument(
-        "--repeat-pause",
-        type=float,
-        default=2.0,
-        help="Pause i sekunder mellem gentagne målinger",
-    )
+    parser = argparse.ArgumentParser(description="60 sekunders live pulsoximeter-måling")
+    parser.add_argument("--cycle-rate", type=float, default=7.41)
+    parser.add_argument("--range", dest="analog_range_v", type=float, default=10.0)
+    parser.add_argument("--bp-low", type=float, default=0.5)
+    parser.add_argument("--bp-high", type=float, default=2.0)
+    parser.add_argument("--peak-prominence", type=float, default=0.3)
+    parser.add_argument("--spo2-a", type=float, default=-24.87)
+    parser.add_argument("--spo2-b", type=float, default=113.8)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    if args.repeats < 1:
-        raise SystemExit("Konfigurationsfejl: --repeats skal være mindst 1")
-    if args.start_delay < 0:
-        raise SystemExit("Konfigurationsfejl: --start-delay må ikke være negativ")
-    if args.reference_spo2 is not None and not 50 <= args.reference_spo2 <= 100:
-        raise SystemExit("Konfigurationsfejl: --reference-spo2 skal ligge mellem 50 og 100 %")
-
-    try:
-        cfg = MåleConfig(
-            total_varighed_s=args.duration,
-            analog_range_v=args.analog_range_v,
-            cycle_rate_hz=args.cycle_rate,
-            max_cycle_rate_hz=args.max_cycle_rate,
-            settle_s=args.settle,
-            peak_prominence_fraction=args.peak_prominence,
-            smoothing_window_s=args.smooth_window,
-            spo2_a=args.spo2_a,
-            spo2_b=args.spo2_b,
-        )
-    except ValueError as exc:
-        raise SystemExit(f"Konfigurationsfejl: {exc}") from exc
-
-    if args.led_test:
-        led_pulse_only_test(cfg, cycles=args.led_test_cycles, fase_varighed_s=args.led_test_phase)
-        return
-
-    print(f"Starter live-måling i {cfg.total_varighed_s:.0f} s")
-    print(
-        f"Cyklusfrekvens: {cfg.cycle_rate_hz:.2f} Hz | "
-        f"målefase: {cfg.fase_varighed_s * 1000:.1f} ms | "
-        f"settle: {cfg.settle_s * 1000:.1f} ms | "
-        f"aktiv LED-duty: {100 * cfg.active_led_duty:.1f}%"
+    cfg = MåleConfig(
+        cycle_rate_hz=args.cycle_rate,
+        analog_range_v=args.analog_range_v,
+        bp_low_hz=args.bp_low,
+        bp_high_hz=args.bp_high,
+        peak_prominence=args.peak_prominence,
+        spo2_a=args.spo2_a,
+        spo2_b=args.spo2_b,
     )
-    print("Luk plotvinduet eller tryk Ctrl+C for at stoppe.")
 
-    wait_before_start(args.start_delay)
+    rows = []
+    plot_state = make_plot(cfg)
+    start = time.monotonic()
 
-    if args.warmup > 0:
-        warmup_chain(cfg, args.warmup)
+    print("Starter 60 sek måling.")
 
-    if args.repeats > 1:
-        run_repeats(
-            cfg,
-            repeats=args.repeats,
-            pause_s=args.repeat_pause,
-            reference_spo2=args.reference_spo2,
-            save_prefix=args.save_prefix,
-        )
-        return
+    with dwf.Device() as device:
+        setup_scope(device, cfg)
+        set_leds(device)
 
-    rows_df, metrics_df = run_live(cfg)
-    save_measurement(args.save_prefix, rows_df, metrics_df)
-    summary = summarize_measurement(metrics_df, cfg, reference_spo2=args.reference_spo2)
-    print_measurement_summary(summary, cfg)
+        try:
+            while time.monotonic() - start < DURATION_S:
+                row = measure_cycle(device, cfg)
+                row["t_s"] = time.monotonic() - start
+                rows.append(row)
+
+                data = pd.DataFrame(rows)
+                bpm, pulse_indices = calculate_hr(data, cfg)
+                r_value, spo2 = calculate_spo2(data, cfg)
+                rows[-1]["bpm"] = bpm
+                rows[-1]["R"] = r_value
+                rows[-1]["spo2"] = spo2
+                update_plot(plot_state, pd.DataFrame(rows), pulse_indices)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            set_leds(device)
+
+    rows_df = pd.DataFrame(rows)
+    save_measurement(rows_df)
+
+    plt.ioff()
+    plt.show()
 
 
 if __name__ == "__main__":

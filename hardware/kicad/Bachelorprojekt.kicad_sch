@@ -2148,16 +2148,6 @@
 		)
 		(uuid "972197b7-5310-40ba-893c-52a80dadb017")
 	)
-	(text "fc = 1/(2*3.14*1e6*1e-9) ~= 159 Hz"
-		(exclude_from_sim no)
-		(at 203.454 68.834 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "9f387f58-8609-4e7d-a26c-e3e734c80606")
-	)
 	(text "Non-inv. JST input"
 		(exclude_from_sim no)
 		(at 167.64 107.188 0)
@@ -2218,7 +2208,7 @@
 		)
 		(uuid "e9fa59fa-acdc-48d5-bf81-d5d36dee3e2a")
 	)
-	(text "2.1 Mohm\n"
+	(text "2.21 Mohm\n"
 		(exclude_from_sim no)
 		(at 106.934 25.654 0)
 		(effects
