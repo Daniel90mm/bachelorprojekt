@@ -15,11 +15,15 @@ from dwfpy.constants import TriggerSource
 
 DURATION_S = 60
 ANALOG_CHANNEL = 0
+ANALOG_RANGE_V = 10.0
 DIO_660 = 1
 DIO_940 = 0
 
 MIN_BPM = 40
 MAX_BPM = 140
+BP_LOW_HZ = 0.5
+BP_HIGH_HZ = 2.0
+PEAK_PROMINENCE = 0.3
 PLOT_WINDOW_S = 15
 HR_WINDOW_S = 30
 SPO2_WINDOW_S = 30
@@ -29,12 +33,8 @@ MIN_METRIC_WINDOW_S = 12
 @dataclass
 class MåleConfig:
     cycle_rate_hz: float = 7.41
-    analog_range_v: float = 10.0
     spo2_a: float = -24.87
     spo2_b: float = 113.8
-    bp_low_hz: float = 0.5
-    bp_high_hz: float = 2.0
-    peak_prominence: float = 0.3
 
     sample_rate_hz: float = 20_000
     settle_s: float = 0.005
@@ -54,7 +54,7 @@ def setup_scope(device, cfg):
     for channel_index, _ in enumerate(scope.channels):
         scope.setup_channel(
             channel_index,
-            range=cfg.analog_range_v,
+            range=ANALOG_RANGE_V,
             offset=0.0,
             coupling="dc",
             filter="average",
@@ -86,7 +86,6 @@ def measure_voltage(device, cfg):
         start=True,
     )
     values = np.asarray(recorder.channels[ANALOG_CHANNEL].data_samples, dtype=float)
-    values = values[np.isfinite(values)]
 
     return float(np.mean(values))
 
@@ -127,31 +126,27 @@ def bandpass(y, t, low_hz, high_hz):
     return sosfiltfilt(sos, y, padlen=min(3 * (sos.shape[0] + 1), len(y) - 1))
 
 
-def normalized_ppg(y):
-    y = np.asarray(y, dtype=float)
-    if len(y) == 0 or np.any(~np.isfinite(y)) or np.any(y <= 1e-3):
-        return None
-
-    dc = np.median(y)
-    if not np.isfinite(dc) or dc <= 1e-3:
-        return None
-    return np.log(y / dc)
-
-
 def calculate_spo2(data, cfg):
     recent = data[data["t_s"] >= data["t_s"].max() - SPO2_WINDOW_S]
     t = recent["t_s"].to_numpy()
 
-    red = normalized_ppg(recent["v_660_korr"].to_numpy())
-    ir = normalized_ppg(recent["v_940_korr"].to_numpy())
+    red = recent["v_660_korr"].to_numpy()
+    ir = recent["v_940_korr"].to_numpy()
 
-    red_bp = bandpass(red, t, cfg.bp_low_hz, cfg.bp_high_hz)
-    ir_bp = bandpass(ir, t, cfg.bp_low_hz, cfg.bp_high_hz)
+    dc_red = np.mean(red)
+    dc_ir = np.mean(ir)
 
-    ac_red = np.percentile(red_bp, 95) - np.percentile(red_bp, 5)
-    ac_ir = np.percentile(ir_bp, 95) - np.percentile(ir_bp, 5)
+    red_ac_signal = bandpass(red, t, BP_LOW_HZ, BP_HIGH_HZ)
+    ir_ac_signal = bandpass(ir, t, BP_LOW_HZ, BP_HIGH_HZ)
 
-    r_value = ac_red / ac_ir
+    # Robust peak-to-peak: mindre følsom for enkelte støjspikes end max-min.
+    ac_red = np.percentile(red_ac_signal, 95) - np.percentile(red_ac_signal, 5)
+    ac_ir = np.percentile(ir_ac_signal, 95) - np.percentile(ir_ac_signal, 5)
+
+    red_ac_dc = ac_red / dc_red
+    ir_ac_dc = ac_ir / dc_ir
+
+    r_value = red_ac_dc / ir_ac_dc
     spo2 = cfg.spo2_a * r_value + cfg.spo2_b
 
     return float(r_value), float(spo2)
@@ -161,44 +156,26 @@ def calculate_hr(data, cfg):
     recent = data[data["t_s"] >= data["t_s"].max() - HR_WINDOW_S]
     t = recent["t_s"].to_numpy()
 
-    y = normalized_ppg(recent["v_940_korr"].to_numpy())
-    y = bandpass(y, t, cfg.bp_low_hz, cfg.bp_high_hz)
-
+    y = recent["v_940_korr"].to_numpy()
+    y = bandpass(y, t, BP_LOW_HZ, BP_HIGH_HZ)
     y = y - np.median(y)
 
     dt = np.median(np.diff(t))
-
     fs = 1 / dt
+
     min_distance = max(1, int(round(fs * 60 / MAX_BPM)))
-    prominence = cfg.peak_prominence * np.ptp(y)
+    prominence = PEAK_PROMINENCE * np.ptp(y)
 
-    best_bpm = np.nan
-    best_points = np.array([], dtype=int)
-    best_regularity = np.inf
-    for polarity in (1, -1):
-        points, _ = find_peaks(polarity * y, distance=min_distance, prominence=prominence)
-        intervals = np.diff(t[points])
-        intervals = intervals[(intervals >= 60 / MAX_BPM) & (intervals <= 60 / MIN_BPM)]
-        if len(intervals) < 2:
-            continue
+    points, _ = find_peaks(y, distance=min_distance, prominence=prominence)
+    intervals = np.diff(t[points])
+    bpm = 60 / np.median(intervals)
 
-        bpm = 60 / np.median(intervals)
-        regularity = np.std(intervals) / np.median(intervals)
-        if regularity < best_regularity:
-            best_bpm = bpm
-            best_points = recent.index.to_numpy()[points]
-            best_regularity = regularity
-
-    return float(best_bpm), best_points
-
-
-def fmt(value, suffix="", decimals=1):
-    return "--" if not np.isfinite(value) else f"{value:.{decimals}f}{suffix}"
+    return float(bpm), recent.index.to_numpy()[points]
 
 
 def make_plot(cfg):
     plt.ion()
-    fig, axes = plt.subplots(2, 1, figsize=(13, 7), dpi=300, constrained_layout=True)
+    fig, axes = plt.subplots(2, 1, figsize=(13, 7), dpi=150, constrained_layout=True)
     fig.canvas.manager.set_window_title("Live pulsoximeter")
 
     line_660, = axes[0].plot([], [], color="tab:red", label="660 nm")
@@ -250,7 +227,7 @@ def update_plot(plot_state, data, pulse_indices):
     ymax = np.nanmax([recent["v_660_korr"].max(), recent["v_940_korr"].max()])
     pad = max((ymax - ymin) * 0.15, 1e-6)
     axes[0].set_ylim(ymin - pad, ymax + pad)
-    axes[0].set_title(f"HR {fmt(last['bpm'], ' BPM')} | SpO2 {fmt(last['spo2'], ' %')} | R {fmt(last['R'], decimals=3)}")
+    axes[0].set_title(f"HR {last['bpm']:.1f} BPM | SpO2 {last['spo2']:.1f} % | R {last['R']:.3f}")
 
     fig.canvas.draw_idle()
     fig.canvas.flush_events()
@@ -265,10 +242,6 @@ def save_measurement(rows_df):
 def parse_args():
     parser = argparse.ArgumentParser(description="60 sekunders live pulsoximeter-måling")
     parser.add_argument("--cycle-rate", type=float, default=7.41)
-    parser.add_argument("--range", dest="analog_range_v", type=float, default=10.0)
-    parser.add_argument("--bp-low", type=float, default=0.5)
-    parser.add_argument("--bp-high", type=float, default=2.0)
-    parser.add_argument("--peak-prominence", type=float, default=0.3)
     parser.add_argument("--spo2-a", type=float, default=-24.87)
     parser.add_argument("--spo2-b", type=float, default=113.8)
     return parser.parse_args()
@@ -278,10 +251,6 @@ def main():
     args = parse_args()
     cfg = MåleConfig(
         cycle_rate_hz=args.cycle_rate,
-        analog_range_v=args.analog_range_v,
-        bp_low_hz=args.bp_low,
-        bp_high_hz=args.bp_high,
-        peak_prominence=args.peak_prominence,
         spo2_a=args.spo2_a,
         spo2_b=args.spo2_b,
     )
