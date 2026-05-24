@@ -91,13 +91,13 @@ def measure_voltage(device, cfg):
 
 
 def measure_cycle(device, cfg):
-    set_leds(device, led_660=True)
-    time.sleep(cfg.settle_s)
-    v_660 = measure_voltage(device, cfg)
-
     set_leds(device, led_940=True)
     time.sleep(cfg.settle_s)
     v_940 = measure_voltage(device, cfg)
+
+    set_leds(device, led_660=True)
+    time.sleep(cfg.settle_s)
+    v_660 = measure_voltage(device, cfg)
 
     set_leds(device)
     time.sleep(cfg.settle_s)
@@ -112,7 +112,7 @@ def measure_cycle(device, cfg):
     }
 
 
-def bandpass(y, t, low_hz, high_hz):
+def bandpass(y, t, low_hz=BP_LOW_HZ, high_hz=BP_HIGH_HZ):
     y = np.asarray(y, dtype=float)
     t = np.asarray(t, dtype=float)
 
@@ -136,8 +136,8 @@ def calculate_spo2(data, cfg):
     dc_red = np.mean(red)
     dc_ir = np.mean(ir)
 
-    red_ac_signal = bandpass(red, t, BP_LOW_HZ, BP_HIGH_HZ)
-    ir_ac_signal = bandpass(ir, t, BP_LOW_HZ, BP_HIGH_HZ)
+    red_ac_signal = bandpass(red, t)
+    ir_ac_signal = bandpass(ir, t)
 
     # Robust peak-to-peak: mindre følsom for enkelte støjspikes end max-min.
     ac_red = np.percentile(red_ac_signal, 95) - np.percentile(red_ac_signal, 5)
@@ -157,7 +157,7 @@ def calculate_hr(data, cfg):
     t = recent["t_s"].to_numpy()
 
     y = recent["v_940_korr"].to_numpy()
-    y = bandpass(y, t, BP_LOW_HZ, BP_HIGH_HZ)
+    y = bandpass(y, t)
     y = y - np.median(y)
 
     dt = np.median(np.diff(t))
