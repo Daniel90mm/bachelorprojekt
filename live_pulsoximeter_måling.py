@@ -116,11 +116,18 @@ def bandpass(y, t, low_hz=BP_LOW_HZ, high_hz=BP_HIGH_HZ):
     y = np.asarray(y, dtype=float)
     t = np.asarray(t, dtype=float)
 
+    if len(y) < 5 or len(t) < 5:
+        return np.full_like(y, np.nan)
+
     dt = np.median(np.diff(t))
+    if not np.isfinite(dt) or dt <= 0:
+        return np.full_like(y, np.nan)
 
     fs = 1 / dt
     nyq = 0.5 * fs
     high = min(high_hz, 0.95 * nyq)
+    if high <= low_hz:
+        return np.full_like(y, np.nan)
 
     sos = butter(2, [low_hz / nyq, high / nyq], btype="band", output="sos")
     return sosfiltfilt(sos, y, padlen=min(3 * (sos.shape[0] + 1), len(y) - 1))
@@ -168,6 +175,9 @@ def calculate_hr(data, cfg):
 
     points, _ = find_peaks(y, distance=min_distance, prominence=prominence)
     intervals = np.diff(t[points])
+    if len(intervals) == 0:
+        return np.nan, recent.index.to_numpy()[points]
+
     bpm = 60 / np.median(intervals)
 
     return float(bpm), recent.index.to_numpy()[points]
@@ -272,8 +282,14 @@ def main():
                 rows.append(row)
 
                 data = pd.DataFrame(rows)
-                bpm, pulse_indices = calculate_hr(data, cfg)
-                r_value, spo2 = calculate_spo2(data, cfg)
+                if row["t_s"] >= MIN_METRIC_WINDOW_S:
+                    bpm, pulse_indices = calculate_hr(data, cfg)
+                    r_value, spo2 = calculate_spo2(data, cfg)
+                else:
+                    bpm = np.nan
+                    pulse_indices = []
+                    r_value = np.nan
+                    spo2 = np.nan
                 rows[-1]["bpm"] = bpm
                 rows[-1]["R"] = r_value
                 rows[-1]["spo2"] = spo2
