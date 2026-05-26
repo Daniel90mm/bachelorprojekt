@@ -80,6 +80,16 @@ ipython_config.py
 # Lokal backup af rå TIFF-filer før mørkemålingerne blev beskåret.
 /data/raw/daniel/backup_før_mørke_crop/
 
+# WaveForms USB-fejllog skrevet i repo-rod.
+/DebugErc.log
+
+# Råmålinger genereret af live_pulsoximeter_måling.py i repo-rod.
+# Navngivne målinger flyttes manuelt til data/live/.
+/pulsoximeter_*.csv
+
+# Løs finger-ROI-figur som blev genereret i roden.
+/finger_930nm_roi_regioner.png
+
 # KiCad-genererede eller lokale filer
 **/.history/
 **/*-backups/*.zip
