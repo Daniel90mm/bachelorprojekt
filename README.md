@@ -76,8 +76,6 @@ python plot_pulsoximeter_målinger.py
   Rå kalibreringsmålinger ligger i [data/calibration/](data/calibration/),
   navngivne livemålinger i [data/live/](data/live/), og færdige figurer
   ligger i [data/plots/](data/plots/).
-- LaTeX-kildekoden til rapporten ligger i et separat repo
-  ([Bachelorproject-Thesis-only](https://github.com/Daniel90mm/Bachelorproject-Thesis-only)).
 
 ## Licens
 
