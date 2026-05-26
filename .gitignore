@@ -62,6 +62,9 @@ ipython_config.py
 /notebooks/3Dprint.ipynb
 /test.ipynb
 
+# Personlig arbejdslog, holdes lokal.
+/notebooks/arbejdslog.ipynb
+
 # Lokale logs og midlertidige filer
 *.log
 *.tmp
